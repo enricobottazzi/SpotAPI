@@ -11,12 +11,11 @@ __install_require__ = [
     "validators",
     "pyotp",
     "beautifulsoup4",
+    "websockets",
+    "redis",
+    "pymongo",
+
 ]
-__extras__ = {
-    "websocket": ["websockets"],
-    "redis": ["redis"],
-    "pymongo": ["pymongo"],
-}
 
 with open("README.md", "r") as f:
     long_description = f.read()
