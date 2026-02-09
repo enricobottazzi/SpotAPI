@@ -56,6 +56,12 @@ class PublicPlaylist:
     ) -> Mapping[str, Any]:
         """Gets the public playlist information"""
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
+
+        # Hardcoded hash avoids expensive JS bundle scraping via part_hash().
+        # If Spotify rotates this hash, update it from browser DevTools or
+        # fall back to: self.base.part_hash("fetchPlaylist")
+        sha256_hash = "7982b11e21535cd2594badc40030b745671b61a1fa66766e569d45e6364f3422"
+
         params = {
             "operationName": "fetchPlaylist",
             "variables": json.dumps(
@@ -70,7 +76,7 @@ class PublicPlaylist:
                 {
                     "persistedQuery": {
                         "version": 1,
-                        "sha256Hash": self.base.part_hash("fetchPlaylist"),
+                        "sha256Hash": sha256_hash,
                     }
                 }
             ),
@@ -177,13 +183,13 @@ class PublicPlaylist:
         """
         UPPER_LIMIT: int = 50
 
-        # Create the BaseClient and resolve the hash ONCE, reuse for all pages
+        # Create the BaseClient ONCE, reuse for all pages
         base = BaseClient(client=client, language=language)
 
-        try:
-            sha256_hash = base.part_hash("queryUserPagination")
-        except (IndexError, ValueError):
-            sha256_hash = "5b1399f199da0b45e368dac387ed4688e84a1c59111c835d0776e3a59d8a4395"
+        # Hardcoded hash avoids expensive JS bundle scraping via part_hash().
+        # If Spotify rotates this hash, update it from browser DevTools or
+        # fall back to: base.part_hash("queryUserPagination")
+        sha256_hash = "5b1399f199da0b45e368dac387ed4688e84a1c59111c835d0776e3a59d8a4395"
 
         resp = PublicPlaylist._query_user_playlists(base, username, UPPER_LIMIT, 0, sha256_hash)
 
