@@ -26,7 +26,6 @@ setup(
     description=__description__,
     packages=find_packages(),
     install_requires=__install_require__,
-    extras_require=__extras__,
     keywords=[
         "Spotify",
         "API",
