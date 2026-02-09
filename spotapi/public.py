@@ -102,6 +102,14 @@ class Public:
         return info
 
     @staticmethod
+    def user_playlists(username: str, /) -> GeneratorType:
+        client = client_pool.get()
+        try:
+            yield from PublicPlaylist.paginate_user_playlists(username, client=client)
+        finally:
+            client_pool.put(client)
+
+    @staticmethod
     def podcast_info(podcast_id: str, /) -> GeneratorType:
         client = client_pool.get()
         podcast = Podcast(podcast_id, client=client)

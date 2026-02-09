@@ -109,6 +109,98 @@ class PublicPlaylist:
             ]["content"]
             offset += UPPER_LIMIT
 
+    @staticmethod
+    def _query_user_playlists(
+        base: BaseClient,
+        username: str,
+        limit: int,
+        offset: int,
+        sha256_hash: str,
+    ) -> Mapping[str, Any]:
+        """Internal helper that performs a single user playlists query using an existing BaseClient."""
+        url = "https://api-partner.spotify.com/pathfinder/v1/query"
+        params = {
+            "operationName": "queryUserPagination",
+            "variables": json.dumps(
+                {
+                    "uri": f"spotify:user:{username}",
+                    "publicPlaylistsV2Limit": limit,
+                    "publicPlaylistsV2Offset": offset,
+                }
+            ),
+            "extensions": json.dumps(
+                {
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": sha256_hash,
+                    }
+                }
+            ),
+        }
+
+        resp = base.client.get(url, params=params, authenticate=True)
+
+        if resp.fail:
+            raise PlaylistError(
+                "Could not get user public playlists", error=resp.error.string
+            )
+
+        if not isinstance(resp.response, Mapping):
+            raise PlaylistError("Invalid JSON")
+
+        return resp.response
+
+    @staticmethod
+    def paginate_user_playlists(
+        username: str,
+        /,
+        *,
+        client: TLSClient = TLSClient("chrome_120", "", auto_retries=3),
+        language: str = "en",
+    ) -> Generator[Mapping[str, Any], None, None]:
+        """
+        Generator that fetches all public playlists for a user in chunks.
+
+        Parameters
+        ----------
+        username : str
+            The Spotify username to look up.
+        client : TLSClient
+            An instance of TLSClient to use for requests.
+        language : str
+            ISO 639-1 language code for the response.
+
+        Yields
+        ------
+        Mapping[str, Any]
+            Each page of the user's public playlists.
+        """
+        UPPER_LIMIT: int = 50
+
+        # Create the BaseClient and resolve the hash ONCE, reuse for all pages
+        base = BaseClient(client=client, language=language)
+
+        try:
+            sha256_hash = base.part_hash("queryUserPagination")
+        except (IndexError, ValueError):
+            sha256_hash = "5b1399f199da0b45e368dac387ed4688e84a1c59111c835d0776e3a59d8a4395"
+
+        resp = PublicPlaylist._query_user_playlists(base, username, UPPER_LIMIT, 0, sha256_hash)
+
+        playlists_data = resp["data"]["user"]["publicPlaylistsV2"]
+        total_count: int = playlists_data["totalCount"]
+
+        yield playlists_data
+
+        if total_count <= UPPER_LIMIT:
+            return
+
+        offset = UPPER_LIMIT
+        while offset < total_count:
+            page = PublicPlaylist._query_user_playlists(base, username, UPPER_LIMIT, offset, sha256_hash)
+            yield page["data"]["user"]["publicPlaylistsV2"]
+            offset += UPPER_LIMIT
+
 
 class PrivatePlaylist:
     """
