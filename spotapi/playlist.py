@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from typing import Any
@@ -11,6 +12,19 @@ from collections.abc import Mapping, Generator
 from spotapi.types.annotations import enforce
 from spotapi.exceptions import PlaylistError
 from spotapi.http.request import TLSClient
+
+logger = logging.getLogger(__name__)
+
+# Ensure timing logs are visible even when spotapi is used as a dependency.
+# If the consumer has already configured handlers on this logger (or a parent),
+# this block is skipped so we don't duplicate output.
+if not logger.handlers and not logging.getLogger("spotapi").handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
+    logger.addHandler(_handler)
+    logger.setLevel(logging.INFO)
 
 __all__ = ["PublicPlaylist", "PrivatePlaylist", "PlaylistError"]
 
@@ -82,7 +96,10 @@ class PublicPlaylist:
             ),
         }
 
+        logger.info("get_playlist_info: starting for playlist_id=%s", self.playlist_id)
+        t0 = time.perf_counter()
         resp = self.base.client.post(url, params=params, authenticate=True)
+        logger.info("get_playlist_info: response received in %.3fs", time.perf_counter() - t0)
 
         if resp.fail:
             raise PlaylistError("Could not get playlist info", error=resp.error.string)
@@ -99,21 +116,52 @@ class PublicPlaylist:
         NOTE: If total_tracks <= 343, then there is no need to paginate.
         """
         UPPER_LIMIT: int = 343
-        # We need to get the total playlists first
+        logger.info("paginate_playlist: starting for playlist_id=%s", self.playlist_id)
+        overall_start = time.perf_counter()
+
+        # First fetch
+        t0 = time.perf_counter()
         playlist = self.get_playlist_info(limit=UPPER_LIMIT)
+        elapsed_fetch = time.perf_counter() - t0
         total_count: int = playlist["data"]["playlistV2"]["content"]["totalCount"]
+        logger.info(
+            "paginate_playlist: initial fetch completed in %.3fs, total_count=%d",
+            elapsed_fetch,
+            total_count,
+        )
 
         yield playlist["data"]["playlistV2"]["content"]
 
         if total_count <= UPPER_LIMIT:
+            overall_elapsed = time.perf_counter() - overall_start
+            logger.info(
+                "paginate_playlist: completed in %.3fs (single page, no pagination needed)",
+                overall_elapsed,
+            )
             return
 
         offset = UPPER_LIMIT
+        page_num = 1
         while offset < total_count:
-            yield self.get_playlist_info(limit=UPPER_LIMIT, offset=offset)["data"][
-                "playlistV2"
-            ]["content"]
+            page_num += 1
+            t0 = time.perf_counter()
+            result = self.get_playlist_info(limit=UPPER_LIMIT, offset=offset)
+            elapsed_fetch = time.perf_counter() - t0
+            logger.info(
+                "paginate_playlist: page %d fetch (offset=%d) completed in %.3fs",
+                page_num,
+                offset,
+                elapsed_fetch,
+            )
+            yield result["data"]["playlistV2"]["content"]
             offset += UPPER_LIMIT
+
+        overall_elapsed = time.perf_counter() - overall_start
+        logger.info(
+            "paginate_playlist: completed in %.3fs (%d pages total)",
+            overall_elapsed,
+            page_num,
+        )
 
     @staticmethod
     def _query_user_playlists(
